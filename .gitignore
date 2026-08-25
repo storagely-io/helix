@@ -1,0 +1,20 @@
+# The two app repos live INSIDE this workspace but are separate git repos,
+# cloned by `make setup`. Never tracked here — not even as submodule gitlinks.
+/apex-app/
+/atlas/
+
+# Local-only state
+/.logs/
+/.run/
+/.env.local
+
+# Supabase: the project skeleton (config, grants, bootstrap SQL) is tracked;
+# the ~300 migration copies are staged from atlas/ by `make setup`, and the CLI
+# writes scratch state under supabase/.temp.
+/.supabase-local/pending/*
+!/.supabase-local/pending/00000000000001_local_bootstrap.sql
+/.supabase-local/supabase/.temp/
+/.supabase-local/supabase/.branches/
+
+# Claude Code local settings (commands/ ARE tracked — they're part of the tooling)
+/.claude/settings.local.json
