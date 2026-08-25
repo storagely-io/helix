@@ -26,13 +26,26 @@ repos.
 
 ## Importing production data
 
-With `PROD_USER_API_EMAIL` / `PROD_USER_API_PASSWORD` set in `apex-app/.env`:
+The import commands are **Claude Code slash commands** (they ship with this repo
+in `.claude/commands/` — nothing to install). Set `PROD_USER_API_EMAIL` /
+`PROD_USER_API_PASSWORD` in `apex-app/.env`, then run Claude Code from the
+workspace root:
 
-- `/import <operator name>` (in Claude Code) — mirror an operator's prod site
-  locally: pages, theme, redirects, Atlas metadata, FMS units/pricing mirrors.
+```bash
+cd helix
+claude                                    # then type: /import Storagely Self Storage
+# or one-shot:
+claude "/import Storagely Self Storage"
+```
+
+- `/import <operator name>` — mirror an operator's prod site locally: pages,
+  theme, redirects, Atlas metadata, FMS units/pricing mirrors. The argument is
+  the operator's *name* (fuzzy-matched), not a slug. Interactive — it asks
+  which match, whether to clean out an existing copy, whether to re-host media.
 - `/update-import <operator name>` — re-pull the latest prod data for an
   operator you already imported (overwrite in place).
-- Or drive the CLI directly: `make import CMD='...'` (see `make import`).
+- Without Claude Code, drive the CLI directly: `make import CMD='...'`
+  (run `make import` for usage) — that's what the commands automate.
 
 ## Day to day
 
