@@ -60,17 +60,28 @@ head1 "FontAwesome Pro registry token (apex-app/.npmrc)"
 if [ -f "$APEX/.npmrc" ]; then
   ok ".npmrc present"
 else
-  bad "apex-app/.npmrc missing — pnpm install WILL fail without it"
-  say "     apex-app depends on @fortawesome/fontawesome-pro, which needs the team's"
-  say "     FontAwesome Pro token. Get it from a teammate or fontawesome.com, then:"
-  say ""
-  say "       cat > apex-app/.npmrc <<'NPMRC'"
-  say "       @fortawesome:registry=https://npm.fontawesome.com/"
-  say "       //npm.fontawesome.com/:_authToken=YOUR-TOKEN-HERE"
-  say "       NPMRC"
-  say ""
-  say "     Then re-run 'make setup'. (.npmrc is gitignored in apex-app — never commit it.)"
-  exit 1
+  say "  apex-app depends on @fortawesome/fontawesome-pro, so pnpm install needs the"
+  say "  team's FontAwesome Pro token. Where to get it:"
+  say "    - a teammate's apex-app/.npmrc (the line after _authToken=), or"
+  say "    - fontawesome.com -> sign in with the team account -> Account -> Tokens"
+  FA_TOKEN=""
+  if [ -t 0 ]; then
+    printf '  paste the token (input hidden; Enter to skip): '
+    read -rs FA_TOKEN; echo
+  fi
+  if [ -n "$FA_TOKEN" ]; then
+    printf '@fortawesome:registry=https://npm.fontawesome.com/\n//npm.fontawesome.com/:_authToken=%s\n' "$FA_TOKEN" > "$APEX/.npmrc"
+    ok "wrote apex-app/.npmrc (gitignored in apex-app — never commit it)"
+  else
+    bad "no token — pnpm install WILL fail without it"
+    say "     When you have it, either re-run 'make setup' and paste it, or:"
+    say ""
+    say "       cat > apex-app/.npmrc <<'NPMRC'"
+    say "       @fortawesome:registry=https://npm.fontawesome.com/"
+    say "       //npm.fontawesome.com/:_authToken=YOUR-TOKEN-HERE"
+    say "       NPMRC"
+    exit 1
+  fi
 fi
 
 # --- scaffold the untracked env files --------------------------------------------
@@ -164,7 +175,29 @@ else
 #PROD_USER_API_PASSWORD=
 #SITEIMPORT_API_URL=
 EOF
-  ok "scaffolded apex-app/.env (add PROD_USER_API_* when you want '/import')"
+  ok "scaffolded apex-app/.env"
+  # Optional, so offered rather than required: '/import' authenticates against
+  # prod ONCE per run, read-only, purely to map an operator name to a source
+  # token (see the import skill). Your own prod platform login is what goes here.
+  if [ -t 0 ]; then
+    say ""
+    say "  Optional: '/import <operator>' needs your PROD platform login to resolve"
+    say "  operator names. Skip now and add to apex-app/.env later if you prefer."
+    printf '  prod email (Enter to skip): '
+    read -r PROD_EMAIL
+    if [ -n "$PROD_EMAIL" ]; then
+      printf '  prod password (input hidden): '
+      read -rs PROD_PASS; echo
+      if [ -n "$PROD_PASS" ]; then
+        { echo "PROD_USER_API_EMAIL=$PROD_EMAIL"; echo "PROD_USER_API_PASSWORD=$PROD_PASS"; } >> "$ROOTENV"
+        ok "prod import credentials written to apex-app/.env (gitignored)"
+      else
+        warn "no password entered — skipped; add PROD_USER_API_* to apex-app/.env later"
+      fi
+    else
+      say "  skipped — add PROD_USER_API_* to apex-app/.env when you want '/import'"
+    fi
+  fi
 fi
 
 # --- dependencies (pnpm, bun, atlas deps, embed wiring) ---------------------------
