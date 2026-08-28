@@ -63,6 +63,56 @@ not done unprompted.
 
 ---
 
+## 5. One legacy per-location unit filter is not expressible in the scope grammar
+
+Scoped sync rules (`packages/rental-contract/sync-rules{,-resolve}.ts`) port every legacy
+per-location and per-unit filter **except one**.
+
+`MyGarageSelfStorageLocationUnitHandler.php` splits a main site and its annex by a **substring**
+of the unit type name (`search_key_custom_loc_unite_type`, e.g. keep units whose type contains
+`"7th St"` at the annex and everything else at the main site). `RentalScopeUnitRule` matches
+`typeToken` and `unitName` by **equality against a list**, never by substring — a deliberate
+constraint (`scope-types.ts`: no operator choice, the match rule is a property of the field), and
+loosening it edges the grammar toward the general filter builder `docs/workflows.md` exists to
+keep it away from.
+
+**Not urgent.** That handler is SSM, and SSM has no v4 units lane at all (`syncs/fms/ssm.ts:126`
+writes `units: []`), so nothing reads a rule there yet. It becomes a real decision only when the
+SSM units lane is built.
+
+**Two shapes if it does.** Enumerate the matching type tokens into an equality list at
+configuration time (no grammar change, but the list goes stale as the FMS gains unit types), or
+add a `startsWith`/`contains` match to that ONE field with the operator-choice ban intact. The
+first is preferable and probably sufficient.
+
+## 6. Facilities render as UUIDs wherever the platform names one
+
+The sync-conditions board, the exception scope readback and the facility switcher all name
+facilities from `useScopeSources` → `checkout-catalog/locations`, which returns `name === code` for
+a Storedge connection that enumerates from a **configured facility list**.
+
+Documented, not new: `checkoutCatalog.ts:160-168` says the Storedge sync "enumerates from the
+configured facility UUIDs and has no names lane yet" and already borrows names from the legacy v2
+export when one exists. The local sandbox has neither a legacy export nor company discovery, so
+every facility reads as a UUID there.
+
+**It fixes itself** on a connection using company discovery (`normalizeStoredgeLocations` carries
+`name`) or one with a legacy export. Closing it for configured-list connections means reading each
+facility's `v4_api_location` artifact to build a dropdown — N reads per page load, which is the cost
+that comment declined.
+
+## 7. A facility skipped by `facility-filter` is logged and recorded nowhere
+
+`StoredgeClient.applyFacilityFilter` (`syncs/fms/storedge.ts:711`) logs which facilities a facility
+condition skipped and how many, and the parent sync's job row keeps none of it. So the board's
+facility group can state what each rule is set to but never what any of them *did* — the units group
+has a per-rule census and the facilities group has nothing equivalent.
+
+The board is honest about it (no badge rather than a zero), but "my location vanished" still has
+nothing on screen to point at, which is the gap the log line's own comment says it exists to close.
+The fix is a `facilitiesCensus` on the parent job row, read the same way `aggregateConditionEffect`
+reads `unitsCensus`.
+
 # Security items awaiting your decision
 
 Neither has been touched.
