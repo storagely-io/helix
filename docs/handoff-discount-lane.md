@@ -29,7 +29,8 @@ Kept out deliberately — folding them in would have put unrelated corrections i
 
 | Gap | Where | Note |
 |---|---|---|
-| **SP-1261 tier-rate cross-check** | `normalize/storedge.ts` publishes raw `tiered_rate` | `listUnitGroupTierRates` (`fms-storedge/unitGroups.ts:64`) is also uncalled. StorEDGE has returned stale `tiered_rate` after tiering was switched off (SP-161). **This is the highest-value remaining item** — the fetch and a `groupBy` are most of it |
+| ~~**SP-1261 tier-rate cross-check**~~ | — | **Done** — see [handoff-tier-rate-crosscheck.md](handoff-tier-rate-crosscheck.md) |
+| ~~**SiteLink has no discount lane**~~ | — | **Done** — and `detail` + `units` with it. [handoff-sitelink-v4-sync.md](handoff-sitelink-v4-sync.md) |
 | Unit-group counts | `total_unit` / `total_available_unit` / `occupancy_percentage` / `vacancy_count` | Legacy read them from the group endpoint; v4 publishes none |
 | Amenity → `FeatureSetting` auto-create | legacy `:456-504` | v4 keeps raw names in `features[]`; no key derivation, no icon defaults, no label refresh |
 | `slug` / `url_slug`, office + access hours | legacy `:670-673` | Not in the detail lane. Three incompatible hours formats still unresolved |
@@ -188,9 +189,12 @@ renders stale rules and the API runs an old lane flag.
 
 ## Where to pick up
 
-1. **SP-1261** — the tier-rate cross-check. Highest value, smallest change, and the reason a
-   facility that turned tiering off can still publish a tiered price.
+1. ~~**SP-1261**~~ — done. [handoff-tier-rate-crosscheck.md](handoff-tier-rate-crosscheck.md).
 2. **`label` on the endpoint registry** — finishes the Atlas card.
 3. The rest of the audit table at the top.
-4. Nothing is committed. Two repos, two commits, never one — and `atlas/` pushes to
-   `storagely-home-base`.
+4. Two repos, two commits, never one — and `atlas/` pushes to `storagely-home-base`.
+
+**Correction to this doc's own premise:** it says "everything is still uncommitted, nothing
+pushed". That was true when it was written. The lane landed as `3d5d52d2` on
+`feat/sync-conditions-and-email-verification`, which is pushed — to that branch, **not** to
+`main`, so no prod deploy has happened.
