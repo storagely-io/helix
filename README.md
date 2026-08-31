@@ -12,7 +12,8 @@ side-by-side into `apex-app/` and `atlas/` (both gitignored here).
 ```bash
 git clone <this repo> helix && cd helix
 make setup      # clones both app repos, scaffolds env files, installs deps,
-                # seeds a local login. Asks for the FontAwesome Pro token once.
+                # seeds a local login. Prompts once for the FontAwesome Pro
+                # token, and (optionally) your prod login for '/import'.
 make dev        # local Supabase + api + platform + atlas + editor + webpage + SSR
 ```
 

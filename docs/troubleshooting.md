@@ -161,18 +161,88 @@ The reliable test is the process's actual working directory, via `/proc/PID/cwd`
 
 ---
 
-## A `.env` value is "set" but the app disagrees
+## A `.env` value is "set" but the app disagrees — or a third party rejects a credential that works
 
 Three separate traps, all seen here:
 
 1. **`atlas/.env.local` never reaches `process.env`.** Vite exposes only `VITE_`-prefixed vars,
    and only to the **browser**. Server code (`*.server.ts`, `*.functions.ts`) reads
    `process.env`, which a `.env` file does not populate. Use `helix/.env.local`.
-2. **`apex-app/.env` is CRLF.** A trailing `\r` becomes part of the value.
+2. **`apex-app/.env` and `apex-app/packages/api/.env` are CRLF.** A trailing `\r` becomes part of
+   the value.
 3. **Quoting.** A value may be wrapped in double quotes *and* contain quote characters, so
    `tr -d "\"'"` corrupts it. Strip only the outer pair: `sed 's/^"//; s/"$//'`.
 
 Trap 3 produced a login 401 that looked like data loss.
+
+### The outward-facing version, which does not look like an env problem at all
+
+`set -a; . packages/api/.env; set +a` hits traps 2 **and** 3 at once — dotenv strips both, `.`
+strips neither — so anything you run from that shell signs or authenticates with
+`"value"\r` instead of `value`. Against a third party the answer comes back as a **credential
+failure**, not a config error:
+
+```
+HTTP 401 error_code=2 — Invalid OAuth Request     # storEDGE, with a perfectly good key
+```
+
+That is indistinguishable from a revoked key, and "but it works in the app / in legacy" reads as
+evidence the local key is stale rather than evidence the shell mangled it. It has cost one session
+already: all four `scripts/probe-storedge-*` scripts were written off as blocked.
+
+**The tell is the length.** A storEDGE consumer key is 40 characters — `${#STORAGE_API_KEY}`
+reporting 41 (CR) or 42 (CR + quotes) is this bug. More generally, print the length of any value
+that "should work" before concluding it is wrong.
+
+```bash
+val() { grep "^$1=" packages/api/.env | head -1 | cut -d= -f2- \
+          | tr -d '\r\n' | sed -e 's/^"//' -e 's/"$//'; }
+export STORAGE_API_KEY=$(val STORAGE_API_KEY)
+export STORAGE_API_SECRET=$(val STORAGE_API_SECRET)
+```
+
+---
+
+## Every SiteLink call fails, and the error names an HTTP header
+
+```
+SOAP Fault — Server did not recognize the value of HTTP Header SOAPAction:
+http://tempuri.org/SiteSearchByPostalCode
+```
+
+**Cause.** The wrong SOAP namespace. `fms-sitelink/transport.ts` built its envelope against
+`http://tempuri.org/` — the ASP.NET default, and what you get by assuming rather than reading the
+WSDL. The real one is `http://tempuri.org/CallCenterWs/CallCenterWs`, and all **534** operations
+in `docs/fms/sitelink/sources/sitelink_wsdl.xml` agree on it.
+
+**Fixed 2026-08-28**, but worth keeping because of what it hid: this was not a partial failure.
+*No SiteLink operation had ever succeeded from v4* — including the `insurance` and `catalog`
+lanes `FMS_LANE_SUPPORT` reported as supported, and `verify` on a SiteLink source. Those flags
+were honest about the code and wrong about the outcome, and nothing anywhere said so, because a
+provider whose every read fails soft looks exactly like a provider with no data.
+
+**Wrong first guess:** the credential. The error arrives on a perfectly good corp code, and
+SiteLink's auth is unusual enough (`sCorpUserName` embeds the API key as `user:::APIKEY`) to make
+"the key must be malformed" the obvious theory. It reads as a header problem because it *is* one —
+believe the message.
+
+**How to check in one call**, without the API:
+
+```bash
+val() { grep "^$1=" packages/api/.env | head -1 | cut -d= -f2- \
+          | tr -d '\r\n' | sed -e 's/^"//' -e 's/"$//'; }
+export SITELINK_CORP_CODE=$(val SITELINK_CORP_CODE)
+export SITELINK_CORP_LOGIN=$(val SITELINK_CORP_LOGIN)
+export SITELINK_CORP_PASSWORD=$(val SITELINK_CORP_PASSWORD)
+node apex-app/scripts/probe-sitelink-facilities.mjs --list-only
+```
+
+Read-only, one SOAP call. It prints the credential SHAPE first (`:::` split, lengths) so a
+mangled-by-the-shell value is ruled out before the request goes out — see the `.env` entry above.
+
+Legacy never met any of this: PHP's `SoapClient` is handed the `?WSDL` URL and reads the namespace
+and the SOAPAction out of it. A hand-built envelope has to be told, and the 55 endpoint docs'
+copy-paste cURL samples carried the same wrong value until they were corrected with the code.
 
 ---
 
