@@ -40,8 +40,20 @@ any credential code. The SiteLink session's answer was "kv_store, and leave the 
 alone for now" — do not assume it carries over.
 
 SSM keys live in `kv_store` per `fms/systemKeys.ts` (`SSM_KEYS`) and `fms/fmsConfig.ts`
-(`resolveSsmConfig`) — read those two rather than guessing the key names. Write them through the
-sanctioned route, not by hand:
+(`resolveSsmConfig`). The three map one-to-one onto legacy's `configures` columns, and all three
+are populated for YourWay — so unlike Gate 5, whose `sitelink_corp_pass` was NULL and blocked
+legacy's own live run until it was supplied out of band, this operator's credential is complete:
+
+| v4 `kv_store` key | legacy column | YourWay |
+|---|---|---|
+| `fms_ssm_api_url` | `configures.ssm_api_url` | set (36 chars) |
+| `fms_ssm_api_username` | `configures.ssm_api_username` | set (9 chars) |
+| `fms_ssm_api_password` | `configures.ssm_api_password` | set (22 chars) |
+
+Note SSM carries an **`api_url` per operator** where SiteLink has one shared endpoint — so the
+base URL is part of the credential, and a wrong one fails in a way that looks like a dead account.
+Confirm `resolveSsmConfig`'s default (if any) rather than assuming the operator's value is
+optional. Write them through the sanctioned route, not by hand:
 
 ```
 PUT /api/v1/users/{userId}/accounts/{accountId}/api-sources/{sourceId}/credentials
@@ -57,24 +69,39 @@ ours; SiteLink has none because the key is the operator's. Establish which SSM i
 (SiteLink, 89 facilities) and `storagelyselfstorage` (storEDGE) and nothing SSM. So unlike the
 SiteLink job, the mirrored corpus is not free — you have to create it.
 
-Legacy's SSM operators, from `configures.api_type = 'ssm'`, smallest first:
+## The target is `yourway-storage` (YourWay Storage), legacy `users.id = 492`
 
-| `users.id` | `client_url` | Locations | Units |
-|---|---|---|---|
-| 222 | `smart-self-storage-ohio` | 1 | 258 |
-| 156 | `ssmdemo` | 6 | 234 |
-| 492 | `yourway-storage` | 5 | 1880 |
-| 584 | `my-garage-self-storage` | 48 | 10876 |
-| 187 | `storage-star` | 115 | 62134 |
+Chosen deliberately. Five facilities is the smallest portfolio that is still a PORTFOLIO, which is
+where this provider's open questions live — the SiteLink job ran against a one-site corp and
+therefore could not test enumeration at all, and said so as an open item. Its inventory is also
+lopsided enough to be interesting rather than uniform:
 
-**Start with `smart-self-storage-ohio`** — one facility, 258 units, the Gate 5 equivalent. A
-"Storage Star" account already exists in the local v4 database, which is the 115-facility one;
-useful later for the enumeration question, wrong for a first pass.
+| `site_id` | `location_code` | Units |
+|---|---|---|
+| 100002 | `004` | 679 |
+| 100003 | `005` | 491 |
+| 100001 | `003` | 417 |
+| 100000 | `002` | 253 |
+| 99999 | `001` | 40 |
+
+1880 units and 2489 discount rows across the five — a real corpus, and a 40-unit facility beside a
+679-unit one, which is the shape that exposes a per-facility assumption.
+
+**The location codes are `001`–`005`.** Bare, zero-padded numeric strings. Worth noticing before
+they cost you something: they are the storage-key segment for every artifact this lane writes, and
+anything that reads one back as a NUMBER loses the padding and addresses `1` instead of `001`.
+`site_id` is a separate 99999–100003 space; do not cross them.
+
+The other SSM operators, for context — `storage-star` (115 facilities, 62k units) and
+`my-garage-self-storage` (48 / 10.9k) are the ones a per-facility mistake gets expensive on, and
+`ssmdemo` (6 / 234) and `smart-self-storage-ohio` (1 / 258) are smaller. A "Storage Star" account
+already exists in the local v4 database; leave it alone until YourWay is clean.
 
 Before running `/import`, **check `hasApiPath` in the inventory output**. Gate 5's was `false`,
 which meant the import would have brought down no FMS artifacts at all and the prompt's premise
-that it gives "half the verification corpus for free" was simply wrong for that operator. Find out
-which SSM operators have an apiPath before spending an import on one.
+that it gives "half the verification corpus for free" was simply wrong for that operator. Confirm
+YourWay has one before spending an import on it — and if it does not, the mirrored corpus has to
+come from somewhere else and Step 5's column 2 is not available.
 
 `PROD_USER_API_EMAIL` / `PROD_USER_API_PASSWORD` are already set in `apex-app/.env`. The import CLI
 talks HTTP to the **running** API — never stop the API for it.
@@ -200,6 +227,18 @@ What the SiteLink lane found it had to withhold, as a guide to what to look for 
 Assume SSM has equivalents and go looking. Report withheld-on-purpose separately from
 unrecognised in the census: one is a decision already taken, the other is a prompt to read
 something.
+
+## The one thing SiteLink could not test, and this operator can
+
+`listLocations` across a real portfolio. Gate 5 has ONE site, so the SiteLink lane shipped with
+"whether the corp-wide search returns every facility rather than silently capping or geo-filtering"
+as an open item — a verify passes on one row, but enumeration needs all of them, and a cap drops
+facilities with no error anywhere.
+
+YourWay has five and legacy names all five (`001` – `005`). **Compare `getLocationList`'s count
+against that on the first run.** If it returns fewer, the fan-out syncs a subset and every missing
+facility is indistinguishable from an operator who never configured one. Put the number in the
+handoff either way — a confirmed five is as useful to the next provider as a discovered cap.
 
 ## Non-negotiables
 
