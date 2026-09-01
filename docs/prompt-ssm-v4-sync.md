@@ -87,10 +87,64 @@ lopsided enough to be interesting rather than uniform:
 1880 units and 2489 discount rows across the five — a real corpus, and a 40-unit facility beside a
 679-unit one, which is the shape that exposes a per-facility assumption.
 
-**The location codes are `001`–`005`.** Bare, zero-padded numeric strings. Worth noticing before
-they cost you something: they are the storage-key segment for every artifact this lane writes, and
-anything that reads one back as a NUMBER loses the padding and addresses `1` instead of `001`.
-`site_id` is a separate 99999–100003 space; do not cross them.
+**YourWay HAS an apiPath, and its v4 sync is already running in production.** Confirmed on the
+prod CDN: `yourway-storage` has a `v4_sync_manifest` with `origin: sync`, refreshed on schedule.
+So Step 5's column 2 IS available and the import is worth spending.
+
+### Two facts measured off prod that will cost you time if you assume otherwise
+
+**1. The two lanes live at DIFFERENT path segments for the same facility.** v4 keys on the SSM
+`site_id`; legacy keys on the `location_code`. Verified in both directions:
+
+```
+200  locations/004/v2_api_location_units.json      <- legacy, location_code
+403  locations/004/v4_api_location_units.json
+403  locations/100002/v2_api_location_units.json
+200  locations/100002/v4_api_location_units.json   <- v4, site_id
+```
+
+This is NOT how SiteLink behaved — there both lanes sat under the same segment, so the SiteLink
+verification could read a v2 and an fms artifact out of one directory. **Here you must map
+`site_id ⇄ location_code` before you can pair them at all**, and the mapping lives in legacy's
+`site_locations`. An earlier draft of this prompt asserted the location code was the storage-key
+segment for every artifact; that is true of legacy and false of v4.
+
+| `site_id` (v4 key) | `location_code` (legacy key) | Units | legacy `status` |
+|---|---|---|---|
+| 99999 | `001` | 40 | Disabled |
+| 100000 | `002` | 253 | Disabled |
+| 100001 | `003` | 417 | Published |
+| 100002 | `004` | 679 | Published |
+| 100003 | `005` | 491 | Published |
+
+**2. v4 enumerates FOUR of those five, and status does not explain which.** The live manifest
+lists `99999, 100001, 100002, 100003` — `100000` is absent. It is tempting to read that as "the
+Disabled one is filtered", but `99999` is Disabled too and DID come through. So one disabled
+facility enumerates and another does not, for a reason nothing here explains.
+
+**This is the enumeration question, live, with a name on it.** Do not start by building lanes —
+start by finding out whether `GetLocationList` returns four or five, and if four, why. The
+possibilities are all different problems: the facility was removed at SSM (legacy's row is stale
+and v4 is right), the call filters on something undocumented, or it caps. A silent cap is the
+worst of them, because a missing facility is indistinguishable from an operator who never
+configured one — which is precisely the failure the SiteLink lane shipped with untested.
+
+### What its lanes look like in prod today
+
+Read off the CDN for `100002`, so you know what "before" is:
+
+| Artifact | State | Why |
+|---|---|---|
+| `v4_api_location` | `{}` — 2 bytes | `detail: false`, the lane you are building |
+| `v4_api_location_units` | `[]` — 2 bytes | `units: false`, the other one |
+| `v4_api_location_insurance` | **1390 bytes, populated** | already works |
+| `v4_api_location_catalog` | 33 bytes — empty shape | `catalog: true`, and it answers with nothing |
+
+That last row is worth a moment: SSM's catalog lane is ON and returns empty. The SiteLink job hit
+the mirror image — a catalog lane that was ON and returned 96 items, 35 of them fees, which is why
+that lane is now held blank. Find out which of the two SSM is before trusting `catalog: true`: an
+empty catalog because the operator sells nothing is a finding; an empty one because the read is
+wrong is a bug wearing the same clothes.
 
 The other SSM operators, for context — `storage-star` (115 facilities, 62k units) and
 `my-garage-self-storage` (48 / 10.9k) are the ones a per-facility mistake gets expensive on, and
@@ -177,6 +231,12 @@ The SiteLink session's method, which is the one to reuse:
 
 1. **Legacy, as published.** The `v2_api_location*.json` the import brings down. Free, high volume,
    but both sides are snapshots taken at different times so every rate and count carries drift.
+
+   **Pair them through the `site_id ⇄ location_code` map, not by directory.** Legacy writes under
+   the location code and v4 under the site id, so the two halves of a facility are in different
+   folders — see the target section above. The SiteLink verification could glob one directory and
+   read both lanes; this one cannot, and a script that assumes it will silently compare nothing
+   and report a clean run.
 2. **Apex v4, offline.** Run the REAL normalizer functions over the REAL mirrored `fms_api_*` rows
    and compare field by field. This is stronger than comparing two live runs because the drift
    disappears — but it only proves the NORMALIZER, since it uses legacy's own bytes.
@@ -227,18 +287,6 @@ What the SiteLink lane found it had to withhold, as a guide to what to look for 
 Assume SSM has equivalents and go looking. Report withheld-on-purpose separately from
 unrecognised in the census: one is a decision already taken, the other is a prompt to read
 something.
-
-## The one thing SiteLink could not test, and this operator can
-
-`listLocations` across a real portfolio. Gate 5 has ONE site, so the SiteLink lane shipped with
-"whether the corp-wide search returns every facility rather than silently capping or geo-filtering"
-as an open item — a verify passes on one row, but enumeration needs all of them, and a cap drops
-facilities with no error anywhere.
-
-YourWay has five and legacy names all five (`001` – `005`). **Compare `getLocationList`'s count
-against that on the first run.** If it returns fewer, the fan-out syncs a subset and every missing
-facility is indistinguishable from an operator who never configured one. Put the number in the
-handoff either way — a confirmed five is as useful to the next provider as a discovered cap.
 
 ## Non-negotiables
 
