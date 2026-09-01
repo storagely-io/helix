@@ -117,6 +117,61 @@ reads `unitsCensus`.
 
 Neither has been touched.
 
+## 8. Legacy publishes an operator's rent roll — including gate codes — to a public CDN
+
+**Found 2026-09-01 while building the SSM v4 lanes. Not caused by that work, and not fixed by it.**
+
+Legacy's `FacilityExportWriter::export_location_files` mirrors SSM's `GetUnitsList` response
+verbatim into `fms_api_location_units.json`, which sits on the production CDN at a **derivable,
+unauthenticated URL** — the same bucket the website importer reads anonymously by design.
+
+`GetUnitsList` is an operator-console endpoint: it returns the RENT ROLL, not a shopping feed.
+Measured on one operator's five facilities, 2006 rows, fetched anonymously with no credential:
+
+| Field | Rows carrying it |
+|---|---|
+| `TenantName` / `TenantFirstName` / `TenantLastName` | 1281 |
+| `TenantEmail` | 1254 |
+| `TenantCellPhone` / `TenantHomePhone` | 1277 / 715 |
+| `TenantAddress` + city/state/zip | ~1260 |
+| **`GateAccessCode`** | **1267** |
+| `GateStatus` (one value is `Delinquent`) | 1265 |
+| `LeaseNumber` / `LeaseStatus` | 1281 |
+| `Balance`, non-zero | 997 |
+
+All 2006 rows carry at least one. A gate access code is the physical key to a stranger's
+belongings; `GateStatus: Delinquent` is a financial judgement about a named person.
+
+**Scope.** SSM-specific, and SSM is the outlier by a wide margin. Measured on the same lane at the
+other two live providers: SiteLink's raw rows carry no person-adjacent field at all (it publishes
+type buckets), and storEDGE's carry `current_tenant_id` — an opaque id and nothing else. So this
+is one provider's endpoint choice, not a systemic export bug.
+
+**What v4 does about it.** The new `v4_api_location_units` lane withholds every one of those fields
+by name behind an allow-list that fails closed, and asserts it: 20 live artifacts across four
+facilities carry **0** of the 33 withheld keys, while the same facility's legacy artifact carries
+26 of them. Twelve tests exist only to fail if any of it ever reaches the file. That protects the
+v4 lane; **it does nothing about the legacy artifacts already published.**
+
+**Why not fixed here.** Three reasons, in order:
+1. The fix is in `app-storagely-io` (`FacilityExportWriter` / the SSM sync's `fms_units` export),
+   which is a different repo and a different deploy.
+2. It is not only a code change — the artifacts are **already on the CDN** for every SSM operator,
+   so it needs a purge as well as a patch, and someone has to decide the disclosure question.
+3. Neither is a call this lane's author should make quietly.
+
+**Fix shape**, smallest first: restrict the exported `fms_units` payload to the ~14 unit fields
+(the v4 allow-list in `normalize/ssm.ts` is the list, already reviewed), then invalidate and
+overwrite the existing objects for all six SSM operators. Both halves are needed — a patch alone
+leaves the historical copies readable.
+
+**Reproduce it in one call** (no credential, prod CDN, replace the path):
+
+```bash
+curl -s "$CDN/v4/fms/client_urls/<apiPath>/locations/<code>/fms_api_location_units.json" \
+  | jq '[.UnitDetailLists[] | select(.GateAccessCode != null)] | length'
+```
+
 ## A GitHub PAT is committed in plaintext in both repos
 
 The same `ghp_…` token is embedded in the `origin` URL in **both** `.git/config` files. Any

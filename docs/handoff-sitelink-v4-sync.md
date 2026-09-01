@@ -1,7 +1,9 @@
 # HANDOFF — the SiteLink v4 location + unit sync
 
 Session of 2026-08-28. Successor to
-[docs/handoff-tier-rate-crosscheck.md](handoff-tier-rate-crosscheck.md).
+[docs/handoff-tier-rate-crosscheck.md](handoff-tier-rate-crosscheck.md); succeeded by
+[docs/handoff-ssm-v4-sync.md](handoff-ssm-v4-sync.md), which did the same for SSM and answered
+open item 6 below.
 
 **Uncommitted, in `apex-app`, on `feat/sync-conditions-and-email-verification`** alongside the
 tier-rate work. Nothing pushed. Pushing `apex-app` main deploys prod via CircleCI with no
@@ -460,9 +462,13 @@ The root suite caught **6** drift guards this session — the fourth session run
    rate as standard. That is a rate policy and belongs in a rule with SiteLink's own modes.
 5. **The discount base.** Priced off `standard_rate` (legacy-exact); the storEDGE lane prices off
    its resolved `web_rate`. The two rates differ on 133 of 6784 rows. Reconciling them is a rule.
-6. **`listLocations` on a large portfolio is still unconfirmed.** The corp-wide search returned the
-   one site a one-site corp has, which does not prove it does not cap or geo-filter. Compare the
-   count against the operator's own the first time it runs for a portfolio.
+6. **`listLocations` on a large portfolio is still unconfirmed** for SiteLink. The corp-wide search
+   returned the one site a one-site corp has, which does not prove it does not cap or geo-filter.
+   Compare the count against the operator's own the first time it runs for a portfolio.
+   *Answered for SSM, on a five-facility portfolio, in
+   [handoff-ssm-v4-sync.md](handoff-ssm-v4-sync.md) — no cap, no geo-filter, and the apparent
+   short count was legacy carrying a ghost row for a facility that had left the feed. Still open
+   for SiteLink, whose search takes a postal filter SSM's does not have.*
 7. **The `corpUsername` is not actually per-operator.** Gate 5's and Safeguard's are byte-identical
    (SHA-256 checked) — it embeds Storagely's own API key. Only `sCorpCode` differs. That makes it a
    candidate for an env default like storEDGE's, which is a change to the credential contract, not

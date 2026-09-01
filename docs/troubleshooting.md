@@ -246,6 +246,51 @@ copy-paste cURL samples carried the same wrong value until they were corrected w
 
 ---
 
+## An FMS lane syncs green and the website shows nothing — check the folder name
+
+The job row says `success`, the artifacts exist, the counts look right, and the page still renders
+the old data.
+
+```
+fms/client_urls/yourway-storage/locations/99999/v4_api_location_units.json   ← the sync wrote this
+fms/client_urls/yourway-storage/locations/001/v4_api_location_units.json     ← every reader wants this
+```
+
+**Cause.** The provider client's `listLocations()` returned the wrong one of the provider's TWO
+facility identifiers, and the artifact's storage key is
+`…/locations/${locationCode.toLowerCase()}/…`. SSM gives every facility a numeric `Id` (`99999`) and
+an operator-facing `Code` (`001`): `Id` is what every SSM endpoint takes, `Code` is what legacy
+stores as `location_code`, what an operator's Atlas `fields.fms_location` holds, and therefore what
+every consumer looks up. `normalize/ssm.ts` keyed on `Id` until 2026-09-01.
+
+**Nothing errors.** The consumer's ladder falls through to `v2_api_location_units`, which is
+present and populated, so the page renders — with legacy's data, forever. Fixed 2026-09-01.
+
+**It also poisons the import mirror**, which is how it was found: `imports/fmsMirror.ts` enumerates
+from the source's own `v4_api_locations`, so it looked for legacy's `v2_*`/`fms_*` files under
+`99999` too, found none, and reported a clean import having mirrored **zero** legacy artifacts. An
+import that brings down "half the verification corpus for free" silently brought down none.
+
+**How to check, for any provider.** Compare the directories the sync wrote against the codes
+legacy publishes — they are not the same list if this is happening:
+
+```bash
+ls apex-app/packages/api/.local-storage/default/fms/client_urls/<apiPath>/locations/
+# vs, from the public CDN:
+curl -s "$CDN/v4/fms/client_urls/<apiPath>/locations/location-list.json" | jq -r '.[].location_code'
+```
+
+**Wrong first guess:** that the lane was returning no data. It was returning all of it, correctly
+normalized, to an address nobody reads. A units artifact of 799 KB is not evidence that anything
+can find it.
+
+**The corollary for a zero-padded code:** `001` read back through a number is `1`, which addresses a
+facility that does not exist. Location codes are strings all the way down; measured across six SSM
+operators, 236 real codes include zero-padded numerals, bare numerals and address slugs — and none
+contains a slash, which was the stated reason for preferring the numeric id.
+
+---
+
 ## `psql` reported success and the schema is still wrong
 
 **Cause.** Error detection anchored at line start (`grep '^ERROR'`). `psql` prefixes

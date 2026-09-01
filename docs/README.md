@@ -15,7 +15,26 @@ things it can only summarise.
 | [secrets-and-env.md](secrets-and-env.md) | An env var "is set" but the app disagrees. The delivery model (three different destinations), the shared HMAC key with two names, and a copy-paste recipe for signing a request by hand. |
 | [local-supabase.md](local-supabase.md) | Rebuilding or repairing the local Atlas database. Why `supabase db reset` cannot be used here, the grant step that is easy to omit and fails at 100%, and the cron jobs that would otherwise POST production. |
 | [embed-and-scope.md](embed-and-scope.md) | The shell↔Atlas iframe: the handshake, what `lock` carries, how `?pageId=` resolves to a location, and why the section round-trip drops some surfaces. |
-| [open-items.md](open-items.md) | Before assuming something is broken. Known gaps, deliberate omissions, and the two security items awaiting a decision. |
+| [open-items.md](open-items.md) | Before assuming something is broken. Known gaps, deliberate omissions, and the security items awaiting a decision. |
+
+## The FMS sync-lane handoffs
+
+One per session, newest first. Each records what shipped, the decisions and their evidence, the
+verification numbers, and what it left undone — so the next provider starts from the last one's
+open items rather than from the code.
+
+| Handoff | Provider / subject |
+|---|---|
+| [handoff-ssm-v4-sync.md](handoff-ssm-v4-sync.md) | **SSM** — detail, units and discounts. Physical-unit grain; the location code that was addressing the wrong folder; the rent-roll exposure |
+| [handoff-sitelink-v4-sync.md](handoff-sitelink-v4-sync.md) | **SiteLink** — detail, units and discounts, and the SOAP namespace that had made every SiteLink call fail |
+| [handoff-tier-rate-crosscheck.md](handoff-tier-rate-crosscheck.md) | **storEDGE** — SP-1261, the `unit_group_tier_rates` cross-check |
+| [handoff-discount-lane.md](handoff-discount-lane.md) | **storEDGE** — `v4_api_location_discounts`, and the audit that started this sequence |
+| [handoff-storedge-lanes-and-conditions.md](handoff-storedge-lanes-and-conditions.md) | **storEDGE** — the first real detail + units lanes, and the conditions audit |
+| [handoff-scoped-sync-rules.md](handoff-scoped-sync-rules.md) · [handoff-sync-conditions-ui.md](handoff-sync-conditions-ui.md) · [handoff-sync-pipeline-ui.md](handoff-sync-pipeline-ui.md) | the sync-rule contract and the operator surfaces that render it |
+| [handoff-v4-location-cutover.md](handoff-v4-location-cutover.md) | the cutover this whole sequence serves |
+
+**Yardi is the only provider left with nothing implemented.** Everything else publishes a real
+units lane.
 
 ## Orientation in 60 seconds
 
