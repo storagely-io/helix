@@ -246,6 +246,44 @@ copy-paste cURL samples carried the same wrong value until they were corrected w
 
 ---
 
+## A checkout offers "Late Fee — $20" as an add-on
+
+Or `NSF Fee`, `Auction Fee`, `Lock Cut Fee`, `Security Deposit` — or a free item called
+`Recurring Charge 11`.
+
+**Cause.** The provider's add-on feed is not an add-on feed. SiteLink's
+`ChargeDescriptionsRetrieve` returns its whole CHARGE catalog: merchandise and penalties in one
+list, with no obvious column separating them. Measured on one real facility, **35 of 96 service
+rows are fees**. The second half is what makes it reach a tenant — `rental-contract/catalog.ts`:
+
+> *"Absent means offer everything — no curation, which is what an unconfigured checkout does"*
+
+So any checkout nobody has hand-curated shows the whole list.
+
+**Fixed 2026-09-01** by filtering on `sChgCategory`, SiteLink's own enum: `Recurring1`–`13` and
+`POS` publish, the 33 named fee categories do not. Measured 28 fee-looking items → 1.
+
+**Two things worth keeping from it:**
+
+- **The separator has to be structural.** Five other fields look plausible (`iPriceType`,
+  `bPermanent`, `bApplyAtMoveIn`, `sCorpCategory`, `ChartOfAcctID`) and every one has values
+  carrying both kinds. Matching the words in the description is what legacy did
+  (`SitelinkLockHelper`, `SsmLockItemFinder`) and is the thing these lanes exist to replace.
+- **An unconfigured slot is its own hazard.** SiteLink ships thirteen `Recurring*` slots whether
+  an operator uses them or not; nine read `Recurring Charge N` at $0. Category alone still
+  published them. The structural test is that the description still equals the provider's default
+  (`sChgDesc === sDefChgDesc`) — an operator who sets a slot up renames it.
+
+**Wrong first guess:** that the operator had misconfigured their checkout. They had not configured
+it at all, which is the default state, and the default is "offer everything".
+
+**Before turning on any provider's catalog lane, ask what the feed actually contains.** storEDGE's
+`invoiceable_items` is split into services / rental_center / fees by the provider; SSM's
+`GetPosItems` is point-of-sale only. SiteLink's is one undifferentiated list, and it is the one
+that bit.
+
+---
+
 ## An FMS lane syncs green and the website shows nothing — check the folder name
 
 The job row says `success`, the artifacts exist, the counts look right, and the page still renders

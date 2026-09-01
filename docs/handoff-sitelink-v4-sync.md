@@ -5,9 +5,128 @@ Session of 2026-08-28. Successor to
 [docs/handoff-ssm-v4-sync.md](handoff-ssm-v4-sync.md), which did the same for SSM and answered
 open item 6 below.
 
-**Uncommitted, in `apex-app`, on `feat/sync-conditions-and-email-verification`** alongside the
-tier-rate work. Nothing pushed. Pushing `apex-app` main deploys prod via CircleCI with no
-approval gate.
+---
+
+## ⚠️ READ THIS FIRST — what actually shipped is NOT what this doc describes
+
+Written 2026-09-01, from the session that landed SSM. **This document describes five SiteLink lanes
+going live. Three of them never did, and the two that did took a different route.** The body below
+is left intact because its measurements are still the reference for this provider — but its "What
+shipped" section is a record of one session's branch, not of what reached `main`.
+
+| Lane | This doc says | Actually on the branch today |
+|---|---|---|
+| `detail` | on | **off** |
+| `units` | on | **off** |
+| `discounts` | on | **off** |
+| `insurance` | on | **on**, but only after a separate review — see below |
+| `catalog` | on | **on**, and only behind a filter that did not exist when this was written |
+
+**What happened.** 39 minutes after this session's SiteLink commit (`c227bba5`, 16:58), a second
+commit landed on `main` — `3f97ef72`, *"the SOAP namespace that made every SiteLink call fail, with
+both lanes held blank"*. It took the transport fix and **nothing else**: `detail`, `units` and
+`discounts` were never carried across, and `insurance` and `catalog` were explicitly set false. The
+reason is in that commit and it is a good one:
+
+> `ChargeDescriptionsRetrieve` is SiteLink's whole CHARGE catalog, not a curated add-on list, and no
+> column separates a sellable service from a penalty. **35 of 96 service items on a real facility
+> are fees** — `Late Fee` $20, `NSF Fee` $25, `Auction Fee` $75, `Lock Cut Fee` $90,
+> `Administrative Fee` $29, `Security Deposit`. And an unconfigured checkout **offers everything**
+> (`rental-contract/catalog.ts`), so those would reach a tenant as monthly add-ons.
+
+Since no SiteLink call had ever succeeded, no location had ever had either artifact — so turning
+them on was switching them on for the FIRST time, on live checkouts, in one sync cycle. That is a
+content decision, and it was rightly kept out of a transport fix.
+
+Both have since been released, one at a time, on
+`feat/sync-conditions-and-email-verification` (PR #1166):
+
+- **`06cff2ac` — coverage on.** It was held for a look, not for a defect. A live
+  `InsuranceCoverageRetrieve` returns a clean protection ladder: five tiers, one named underwriter,
+  $2,500 → $20,000 of coverage at $13 → $103 a month, monotonic in both.
+- **`8e9dea5e` — catalog on, behind a filter.** See the next section.
+
+`detail`, `units` and `discounts` remain **off** and are the open item this doc's own body is the
+best guide to. Note what turning `units` on would arm: the reader gap recorded as open item 10 in
+[handoff-ssm-v4-sync.md](handoff-ssm-v4-sync.md), which is provider-independent.
+
+---
+
+## The catalog filter — how the fee problem was answered
+
+`normalizeSitelinkCatalog` now separates merchandise from penalties on **`sChgCategory`**, which is
+SiteLink's own enum and the same field the discount lane already reads to tell a rent concession
+from a POS one. Not a match on the words in `sChgDesc` — that is `SitelinkLockHelper`, the thing
+this lane exists to replace.
+
+**It is the only candidate that works.** Measured against the same 96 live charge rows:
+
+| Field | Distinct values | Values mixing sellable with fee |
+|---|---|---|
+| **`sChgCategory`** | 51 | **0** ✅ |
+| `iPriceType` | 2 | 1 |
+| `bPermanent` | 2 | 2 |
+| `bApplyAtMoveIn` | 2 | 1 |
+| `sCorpCategory` | 10 | 2 |
+| `ChartOfAcctID` | 30 | 2 |
+
+`Recurring1`–`Recurring13` publish as services, `POS` as one-time items, and the 33 named fee and
+accounting categories (`LateFee1`–`5`, `NSFFee`, `AuctionFee`, `LockCutFee`, `AdminFee`, `SecDep`,
+`Rent`, `Mob_*`, `*_Dismssd`, …) are withheld and counted by name.
+
+**A second clause came out of testing the first.** Filtering by category alone still published nine
+EMPTY slots: SiteLink ships thirteen recurring slots whether an operator uses them or not, and 9 of
+13 read `Recurring Charge 5`…`13` at $0. A tickable *"Recurring Charge 11 — free"* is the same
+problem in different clothes. The test is structural rather than a name match — an unconfigured slot
+still carries the provider's default label, so `sChgDesc === sDefChgDesc`. It separates **13 of 13**:
+the nine unconfigured are equal, and the four real ones (`Water and Electric`, `24 Hour Access`,
+`Blankets`, `Shelving`) are not.
+
+Measured end to end, the real normalizer over that facility's real published rows:
+
+| | Before | After |
+|---|---|---|
+| Items offered on an uncurated checkout | 127 | **64** |
+| Fee-looking items among them | 28 | **1** |
+
+What remains is merchandise — boxes, bubble wrap, padlocks, dehumidifiers, packing kits — plus the
+four configured recurring services.
+
+**A separate bug the work exposed.** The two retail feeds were being de-duplicated by id only, and
+they share **zero ids and only 5 titles**: `POSItemsRetrieve` returns 31 items, the POS-category
+charge rows 43, and they are complementary catalogues (mattress bags and dish boxes on one side,
+dehumidifiers and padlocks on the other). The id-only subtraction removed nothing. Both now publish,
+de-duplicated by id AND by normalised title.
+
+The census reaches the job row as `catalogNote` — never the artifact, which is CDN-public. It
+answers both *"where is my Late Fee"* and, more usefully, *"you did not publish something I sell"*.
+
+### What it deliberately cannot classify
+
+- **Seven uncategorised rows**, and they are genuinely mixed: `Cleaning Fee`, `Mailing Fee`,
+  `Key Charge`, `Cut Lock Letter` and `Transferred Rent` are charges, but `24 hour access` ($15) and
+  `Davinci Lock Rental` ($50) are things the operator plainly sells. Nothing in the row separates
+  them, so the allow-list fails CLOSED and names every one. Offering a cleaning fee is a worse error
+  than withholding a lock rental — but the second is a real cost, and the census is how it gets
+  noticed.
+- **One $0 row still publishes**: `Auction Unit (Abandoned units)`, from `POSItemsRetrieve`, which
+  returns no `sDefChgDesc` — so no structural signal exists for it.
+- **Validated on ONE facility.** The categories are SiteLink system enums, so they should hold
+  everywhere; that is reasoning, not measurement. Gate 5's is the only SiteLink charge feed
+  available locally.
+
+### The scope this changes, stated plainly
+
+`SitelinkRentalAddonHandler.php` is legacy's answer to the same question, and it offers far less:
+`LEDGER_SERVICE_ITEMS` is **empty** in the base class, so the recurring block never runs at all, and
+POS is filtered to smart-unit items only. The four operators with subclasses each carry a ONE-item
+allow-list (`24 Hour Access`, `Smart Unit Service`, `Smart Unit Monitoring`). Gate 5 has no subclass
+and no smart-unit POS row, so **legacy offers it zero add-ons today.**
+
+So this is 0 → 64, not a like-for-like restore. That is the v4 model working as
+`syncs/fms/client.ts` states it — *"everything is ingested and the OPERATOR curates"*, replacing
+four hardcoded per-customer name lists — but it is a change in kind, and worth knowing before the
+first SiteLink checkout renders an add-on section.
 
 ---
 
@@ -32,10 +151,14 @@ Symptom → cause is now in [troubleshooting.md](troubleshooting.md#every-siteli
 
 ---
 
-## What shipped
+## What shipped *on this session's branch* — see the banner above for what reached main
 
 Three lanes, real: `v4_api_location`, `v4_api_location_units`, `v4_api_location_discounts`.
 `FMS_LANE_SUPPORT.sitelink` now reads `detail/units/insurance/catalog/discounts: true`.
+
+> **Superseded.** Only the transport fix went to main, and these three lanes are OFF today.
+> `insurance` and `catalog` were released separately later, the catalog behind a filter. Everything
+> below is still the reference for HOW these lanes work when someone turns them on.
 
 | Lane | Reads | Note |
 |---|---|---|
@@ -477,4 +600,16 @@ The root suite caught **6** drift guards this session — the fourth session run
    empty password gets `Ret_Code -98` from SiteLink. If prod's row is the same, legacy's SiteLink
    sync for that client has been failing silently and the v4 lanes are the only thing that can
    read it. One `SELECT` answers it; nothing in this workspace can.
-9. Two repos, two commits, never one — and `atlas/` pushes to `storagely-home-base`.
+9. **`detail`, `units` and `discounts` are still off for SiteLink.** They are built and measured —
+   this document is the guide — but they never went to main. Turning `units` on also arms the
+   consumer-shape gap recorded as open item 10 in
+   [handoff-ssm-v4-sync.md](handoff-ssm-v4-sync.md): `readRate` and `discountId` read a raw row
+   with v2 field names, which the canonical shape does not use. That gap is provider-independent
+   and would bite SiteLink the moment its units artifact stops being empty.
+10. **The catalog filter is validated on one facility.** `sChgCategory` values are SiteLink system
+   enums so they should be universal, but only Gate 5's charge feed was available. The first time
+   it runs for another operator, read the `catalogNote` census — particularly its
+   `uncategorised` list, which is the bucket that can withhold something an operator sells.
+11. **`Auction Unit (Abandoned units)` at $0 still publishes**, from `POSItemsRetrieve`, which
+   carries no `sDefChgDesc`. Low severity; no structural signal exists for it.
+12. Two repos, two commits, never one — and `atlas/` pushes to `storagely-home-base`.

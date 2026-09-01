@@ -629,11 +629,14 @@ which `packages/api`'s jest suite alone would have shipped a gap.
    record. `buildReservationUnit` reads raw ON PURPOSE — its docblock says so — so changing it
    alters what all four providers send their FMS and wants its own verification pass. Column 4 is
    the harness for it; it must go to zero.
-10. **The same gap is already latent for the LIVE SiteLink lane.** `quotedRate` and `discountId` are
-   provider-independent: SiteLink publishes a non-empty `v4_api_location_units` in production today,
-   so if Gate 5 or Safeguard has a checkout or `reservation` component on a v4 page, `readRate` is
-   already returning null and `discountId` already null for them. **Unverified — I did not check
-   their page sets.** It is the first thing to look at, independent of this change.
+10. **The same gap would hit SiteLink the moment its units lane goes on.** `quotedRate` and
+   `discountId` are provider-independent. *Corrected 2026-09-01:* an earlier draft of this item said
+   SiteLink "publishes a non-empty `v4_api_location_units` in production today" and might already be
+   affected. It does not — `3f97ef72` took only the transport fix to main and left `detail`, `units`
+   and `discounts` off, so that artifact is still empty for every SiteLink location and nothing is
+   exposed. The gap is therefore a PREREQUISITE for turning SiteLink's units lane on, not a live
+   defect. See [handoff-sitelink-v4-sync.md](handoff-sitelink-v4-sync.md), which now records what
+   actually shipped for that provider.
 11. **`readVacancy` starts answering for SSM.** See Column 4. A reservation on a non-vacant unit
    will be refused where it previously passed. Correct, but new.
 12. **Yardi is the last stubbed provider**, and it is a bigger job than this one: two APIs in tandem,

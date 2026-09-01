@@ -26,7 +26,7 @@ open items rather than from the code.
 | Handoff | Provider / subject |
 |---|---|
 | [handoff-ssm-v4-sync.md](handoff-ssm-v4-sync.md) | **SSM** — detail, units and discounts. Physical-unit grain; the location code that was addressing the wrong folder; the rent-roll exposure |
-| [handoff-sitelink-v4-sync.md](handoff-sitelink-v4-sync.md) | **SiteLink** — detail, units and discounts, and the SOAP namespace that had made every SiteLink call fail |
+| [handoff-sitelink-v4-sync.md](handoff-sitelink-v4-sync.md) | **SiteLink** — the SOAP namespace that had made every SiteLink call fail; coverage and the catalog, the latter behind a filter that keeps `Late Fee` off a checkout. **Its "what shipped" section is superseded — read the banner at the top** |
 | [handoff-tier-rate-crosscheck.md](handoff-tier-rate-crosscheck.md) | **storEDGE** — SP-1261, the `unit_group_tier_rates` cross-check |
 | [handoff-discount-lane.md](handoff-discount-lane.md) | **storEDGE** — `v4_api_location_discounts`, and the audit that started this sequence |
 | [handoff-storedge-lanes-and-conditions.md](handoff-storedge-lanes-and-conditions.md) | **storEDGE** — the first real detail + units lanes, and the conditions audit |
