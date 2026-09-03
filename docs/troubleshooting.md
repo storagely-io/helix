@@ -194,6 +194,35 @@ already: all four `scripts/probe-storedge-*` scripts were written off as blocked
 reporting 41 (CR) or 42 (CR + quotes) is this bug. More generally, print the length of any value
 that "should work" before concluding it is wrong.
 
+### A THIRD variant: a value whose newlines are escaped, and only one environment un-escapes them
+
+Found 2026-09-03 on Yardi, and it defeats the `val()` helper above because nothing is mangled —
+the value is stored escaped and needs converting.
+
+`YARDI_SOAP_LICENSE` is a 378-byte base64 PKCS#7 blob that **must carry real newlines**. The `.env`
+holds them as five literal two-character `\n` sequences inside one quoted single-line value.
+Legacy converts them — `YardiSoapClient::getCredentials`, `str_replace('\n', "\n", $license)` —
+**only when `App::environment('staging')`**, and a local checkout is `APP_ENV=local`.
+
+Sent escaped, Yardi answers inside an HTTP **200**:
+
+```
+<Message messageType="Error">Unable to invoke Interface Web Service. Invalid Yardi Interface License.</Message>
+```
+
+Which reads as an expired or revoked license. It is neither. Same misattribution as the two above,
+by a third mechanism: a credential failure that is really a config one.
+
+**The tell** is a `\n` in the value with no newline in it:
+
+```bash
+python3 -c "print(open('.env').read().count(r'\n'))"   # literal backslash-n, not a newline
+```
+
+`.replace(/\\n/g, '\n')` before writing it anywhere. And the general rule this makes explicit:
+**a multi-line secret in a single-line `.env` is escaped somewhere, and the un-escaping is
+somebody's code rather than a property of the file.**
+
 ```bash
 val() { grep "^$1=" packages/api/.env | head -1 | cut -d= -f2- \
           | tr -d '\r\n' | sed -e 's/^"//' -e 's/"$//'; }
@@ -281,6 +310,103 @@ it at all, which is the default state, and the default is "offer everything".
 `invoiceable_items` is split into services / rental_center / fees by the provider; SSM's
 `GetPosItems` is point-of-sale only. SiteLink's is one undifferentiated list, and it is the one
 that bit.
+
+---
+
+## An FMS source syncs green and publishes ZERO facilities
+
+The job row says `success`. `v4_api_locations.json` exists, is well-formed, and is `[]`. No error
+anywhere. The operator has 89 facilities.
+
+**Cause (before 2026-09-02).** The enumeration read FAILED and was published as a finding. Three
+of the five provider clients had this path:
+
+```
+settle('getLocationList', …)  →  catch, log.warn, return null
+normalizeSsmLocations(null)   →  []
+writeEndpoint('v4_api_locations', [])   →  published
+```
+
+`[]` does not mean "that read failed" — it means **"this operator has no facilities"**, and it is
+indistinguishable from the real thing at every downstream stop. The likeliest trigger is a missing
+or wrong credential: `resolveSitelinkConfig` and `resolveSsmConfig` throw `FmsNotConfiguredError`
+on any missing key and **neither has an env fallback** (storEDGE does). Measured on production:
+two live operators publishing `[]` against 122 and 89 facilities, while legacy's sync refreshed
+every one of those facilities the same day.
+
+**Fixed 2026-09-02.** `listLocations` returns `FmsLocationListResult` with an `incomplete` flag; on
+`incomplete` the sync writes nothing (not even the manifest), fans out nothing, and **throws** — so
+the previous facility list stands and the reason lands on a failed job row. A count check
+(`enumerationCoverage.ts`) then compares every clean run against legacy's own list and reports a
+short portfolio **by name** on `ctx.metrics.enumerationCoverage`.
+
+**How to check, without credentials.** Compare v4's list against legacy's for the same apiPath —
+`location-list.json` is legacy's, published at a v4-prefixed path:
+
+```bash
+CDN=https://d162qya9roxth5.cloudfront.net/v4/fms/client_urls
+curl -s "$CDN/<apiPath>/locations/v4_api_locations.json?cb=$$"  | jq length
+curl -s "$CDN/<apiPath>/locations/location-list.json?cb=$$"     | jq length
+```
+
+**A short count is often CORRECT, so classify before believing it.** Legacy never deletes
+`site_locations`, so its list out-counts a healthy operator's portfolio permanently. Three benign
+shapes, all measured on real operators:
+
+| Legacy row v4 did not return | Tell |
+|---|---|
+| a **renamed** code | same `site_name` as a facility v4 DID return; often two legacy rows share one FMS `site_id`; its artifacts are frozen at the rename date |
+| an **unpublished** row | legacy's own `status !== 'Published'` — the operator's site does not show it either |
+| a **synthetic** row | 403 on *every* artifact, legacy's `v2_*`/`fms_*` included — no FMS facility exists behind it |
+
+One SSM operator's "24 of 48" was 20 of the first and 4 of the third, and v4's 24 was right.
+
+**Wrong first guess:** that the provider's list endpoint caps or geo-filters. Neither does —
+SSM's `GetLocationList` takes no parameters, and SiteLink's `SiteSearchByPostalCode` with
+`sPostalCode: ''` / `iCountry: -999` is confirmed on an 89-facility corp. Loosening a filter or
+changing the call would have been a change to working code; worse, `verifySitelink` shares that
+probe, so a "fix" can make verify pass while enumeration stays wrong. Full writeup in
+[handoff-enumeration-sitelink-ssm.md](handoff-enumeration-sitelink-ssm.md).
+
+---
+
+## A lane verifies clean against thousands of mirrored rows and publishes ZERO live
+
+The offline comparison is perfect — 173,705 field comparisons over 284 facilities, zero mismatches,
+every perturbation caught. The first live sync writes `[]`.
+
+**Cause.** The mirrored corpus and the live wire are DIFFERENT SHAPES, and the harness fed the
+normalizer the corpus.
+
+```
+AvailableUnits returns   PhysicalProperty > Property[@IDValue] > Floorplan[@IDValue][@IDType]
+                         PascalCase children, ranges on ATTRIBUTES of empty elements
+
+fms_api_location_units   { units: [ { …, floorplans: [ { id_value, initial_rent, … } ] } ] }
+.json on the CDN         legacy's PARSED DTO
+```
+
+`fms_api_*` artifacts are the **previous system's parser output**, not the provider's bytes. Every
+offline column reads them, because that is what the CDN carries and what `imports/fmsMirror.ts`
+mirrors. The client reads the wire. A comparison built only from the corpus can be internally
+perfect and measure a shape the client never produces.
+
+**The rule.** A 1-to-1 against a mirrored corpus verifies the NORMALIZER. It says nothing about the
+CLIENT. There must be one comparison that reads **the artifact the sync actually wrote** — see
+Column 5 in [handoff-yardi-v4-sync.md](handoff-yardi-v4-sync.md).
+
+**Two more defects hid behind the same seam**, and neither was visible offline:
+
+- `elementToValue` (the SHARED SOAP→object helper) silently dropped attributes from childless
+  elements, so `<SquareFeet Min="100" Max="100"/>` became `''`. SiteLink and SSM never noticed
+  because DataSet XML puts values in child elements. Fixed 2026-09-03.
+- RentCafe returned **two mappings for 52 Voyager codes** and both integrations keyed them
+  last-wins over an unordered list, so the `propertyId` a rental is sent to was decided by response
+  order. A live facility resolved a **test property**. See the handoff.
+
+**Wrong first guess:** the credential, then the filter. Both reads succeeded and both returned
+data; the shape was wrong one layer down. The fastest diagnosis is a read-only probe that prints
+the WIRE — `scripts/probe-yardi-floorplans.mjs`, the sibling of the SiteLink and storEDGE ones.
 
 ---
 

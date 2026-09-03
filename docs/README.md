@@ -25,6 +25,10 @@ open items rather than from the code.
 
 | Handoff | Provider / subject |
 |---|---|
+| [handoff-yardi-v4-sync.md](handoff-yardi-v4-sync.md) | **Yardi — the last provider.** detail, units and discounts, at unit-TYPE grain, over **284 facilities**. Read it for the thing that outlives the lane: **the offline 1-to-1 was clean over 173,705 comparisons and the first live sync published ZERO units**, because the mirrored corpus is legacy's parsed DTO and the wire is MITS XML. Also the two ids that are not interchangeable, `web_rate` as a WEEKLY rate × 4, legacy's fabricated unit counts, and **52 Voyager codes with two RentCafe mappings each** — one of which sent a live facility to a test property |
+| [prompt-yardi-v4-sync.md](prompt-yardi-v4-sync.md) | the prompt the above answers. **Three of its premises are wrong** — the unit counts are fabricated, legacy does not lose the country signal, and the `zTest` filter is load-bearing rather than a no-op. See that handoff's *Four corrections* |
+| [handoff-enumeration-sitelink-ssm.md](handoff-enumeration-sitelink-ssm.md) | **SiteLink + SSM — enumeration.** Only two of the six operators were gaps, and both causes are ours: a failed enumeration read was published as "this operator has no facilities". The `incomplete` contract that stops it, and a coverage check that names a short portfolio. Answers SiteLink open item 6 (**no cap, no geo-filter**) and corrects the brief's Gate-5-vs-Safeguard mix-up |
+| [prompt-enumeration-sitelink-ssm.md](prompt-enumeration-sitelink-ssm.md) | the prompt the above answers. **Two of its premises are wrong** — see that handoff's *Two corrections*. Its Half 2 (SiteLink's three built-but-off lanes) was a second session's work and is not covered there |
 | [handoff-ssm-v4-sync.md](handoff-ssm-v4-sync.md) | **SSM** — detail, units and discounts. Physical-unit grain; the location code that was addressing the wrong folder; the rent-roll exposure |
 | [handoff-sitelink-v4-sync.md](handoff-sitelink-v4-sync.md) | **SiteLink** — the SOAP namespace that had made every SiteLink call fail; coverage and the catalog, the latter behind a filter that keeps `Late Fee` off a checkout. **Its "what shipped" section is superseded — read the banner at the top** |
 | [handoff-tier-rate-crosscheck.md](handoff-tier-rate-crosscheck.md) | **storEDGE** — SP-1261, the `unit_group_tier_rates` cross-check |
@@ -33,8 +37,21 @@ open items rather than from the code.
 | [handoff-scoped-sync-rules.md](handoff-scoped-sync-rules.md) · [handoff-sync-conditions-ui.md](handoff-sync-conditions-ui.md) · [handoff-sync-pipeline-ui.md](handoff-sync-pipeline-ui.md) | the sync-rule contract and the operator surfaces that render it |
 | [handoff-v4-location-cutover.md](handoff-v4-location-cutover.md) | the cutover this whole sequence serves |
 
-**Yardi is the only provider left with nothing implemented.** Everything else publishes a real
-units lane.
+**All five providers now publish a real units lane.** Yardi was the last, and landed 2026-09-03
+with `detail`, `units` and `discounts` on — verified against every one of its operator's 284
+facilities, offline and live.
+
+What is left is not a provider. It is the two things the Yardi session found and could not close:
+**legacy resolves an ambiguous RentCafe property mapping by luck** ([open-items.md §11](open-items.md)),
+and **no Yardi API reports a currency while 67 facilities are Canadian**
+([§12](open-items.md)). Plus the standing v2-half of the availability work
+([§10](open-items.md)), which is a decision rather than a defect.
+
+**The methodological finding is the one to carry forward**, and it is written up in
+[troubleshooting.md](troubleshooting.md): a 1-to-1 against a mirrored `fms_api_*` corpus verifies
+the NORMALIZER and says nothing about the CLIENT, because those artifacts are the previous
+system's parser output rather than the provider's bytes. Every future lane needs a column that
+reads what the sync actually wrote.
 
 ## Orientation in 60 seconds
 
