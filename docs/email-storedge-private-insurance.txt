@@ -1,0 +1,59 @@
+Subject: Recording a tenant's own insurance policy at API move-in — best approach?
+
+Hi team,
+
+When a tenant brings their own insurance policy at online move-in, we'd like to
+record the carrier and policy number against the rental. Two questions.
+
+
+1. CAN THIS BE DONE AS PART OF process_move_in?
+
+When a tenant picks one of the facility's plans, we send its insurance_id and
+everything is recorded.
+
+When they say they have their own policy, we first tried sending
+insurance_id: null. That's rejected:
+
+    (4) An insurance option must be selected for move in
+        (insurance_id: An insurance option must be selected for move in)
+
+Sending insurance_id: "-999" instead works and the move-in succeeds — though
+we'd like to confirm that's the value you'd expect us to use. Either way, we
+can't find anywhere in the request to put the tenant's carrier name and policy
+number, so those never reach you. Is there a field for them that we've missed?
+
+We'd prefer this over a second call after the lease exists.
+
+
+2. IF NOT — CAN WE USE PUT ledgers/:ledger_id/private_insurance?
+
+That looks like the right endpoint for this, but it returns a 403 for us:
+
+    PUT /v1/25e2ece8-668b-467d-934b-81dd0024edbc/ledgers/0250e2dd-0fe8-4ef1-923c-ce2cf051c8a1/private_insurance
+
+    → 403  "You are not authorized to access this page."
+       request_id: 5f7ca268-6700-9f3c-bd68-33296bc378ad
+
+It isn't a general permissions problem: the same credential reads that ledger
+fine (GET ledgers/{id}, /insurance_enrollment_history,
+/insurance_services_and_discounts all return 200) and writes move-ins fine.
+
+So: is this endpoint available to us, and what permission enables it? A full
+example request — headers and complete body — would be ideal.
+
+One thing we're unsure of: insurance_term is required, but the tenant only
+gives us their carrier and policy number at checkout, never an expiration date.
+What do you recommend there?
+
+
+WHY WE'RE CHASING IT
+
+With -999 and no proof on file, the ledger shows current_insurance: null and an
+empty enrolment history, while the tenant carries
+exclude_from_insurance_auto_enroll: false. That looks like a tenant who told us
+they're already covered could be auto-enrolled into a paid plan.
+
+Lease 6670 on facility 25e2ece8-668b-467d-934b-81dd0024edbc is a live example.
+
+Thanks,
+Chrys
